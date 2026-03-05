@@ -1,0 +1,12 @@
+*.so
+*.dll
+*.exe
+bhl
+voice-assistant
+.DS_Store
+*.log
+.env
+*.pem
+*.key
+tmp*
+tmp

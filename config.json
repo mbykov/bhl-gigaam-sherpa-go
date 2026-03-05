@@ -1,0 +1,7 @@
+{
+  "model_path": "/home/michael/LLM/bhl/servers/Models/gg_v3_e2e_rnnt/onnx_e2e_rnnt",
+  "sample_rate": 16000,
+  "feature_dim": 64,
+  "num_threads": 2,
+  "provider": "cpu"
+}
