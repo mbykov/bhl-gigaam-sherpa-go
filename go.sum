@@ -6,5 +6,7 @@ github.com/go-audio/wav v1.1.0 h1:jQgLtbqBzY7G+BM8fXF7AHUk1uHUviWS4X39d5rsL2g=
 github.com/go-audio/wav v1.1.0/go.mod h1:mpe9qfwbScEbkd8uybLuIpTgHyrISw/OTuvjUW2iGtE=
 github.com/madelynnblue/go-dsp v1.0.0 h1:ufzvSGl8IdjCA6BFVUx1cZW/aDiiXxDBWU1MpkrtAiM=
 github.com/madelynnblue/go-dsp v1.0.0/go.mod h1:dpf07Rj/u3te6cW3KwRBAqlyjP4InXHhNaYVuY73hHU=
+github.com/mbykov/bhl-gigaam-sherpa-go v0.0.0-20260305213232-a427e9bd6e33 h1:y+AtFYx4Wr/7T3TfBOUZNMfDtoccKtKHQi74oPsZvlY=
+github.com/mbykov/bhl-gigaam-sherpa-go v0.0.0-20260305213232-a427e9bd6e33/go.mod h1:2OicZY0I1WhUuXpvVx7BbfhMosp45HKJXU8yd4DWKmk=
 github.com/yalue/onnxruntime_go v1.27.0 h1:c1YSgDNtpf0WGtxj3YeRIb8VC5LmM1J+Ve3uHdteC1U=
 github.com/yalue/onnxruntime_go v1.27.0/go.mod h1:b4X26A8pekNb1ACJ58wAXgNKeUCGEAQ9dmACut9Sm/4=

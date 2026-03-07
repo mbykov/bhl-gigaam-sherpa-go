@@ -6,7 +6,7 @@ import (
     "log"
     "os"
 
-    "github.com/mbykov/bhl-gigaam-sherpa-go"
+    "github.com/mbykov/bhl-gigaam-go"
 )
 
 func main() {
@@ -19,6 +19,10 @@ func main() {
         log.Fatalf("❌ Ошибка загрузки конфигурации: %v", err)
     }
 
+    if *audioFile == "" {
+        log.Fatal("❌ Укажите аудио файл через -audio")
+    }
+
     fmt.Printf("🔧 Конфигурация GigaAM:\n")
     fmt.Printf("  Модель: %s\n", cfg.ModelPath)
     fmt.Printf("  Частота: %d Hz\n", cfg.SampleRate)
@@ -28,10 +32,6 @@ func main() {
         log.Fatalf("❌ Ошибка создания GigaAM модуля: %v", err)
     }
     defer module.Close()
-
-    if *audioFile == "" {
-        log.Fatal("❌ Укажите аудио файл через -audio")
-    }
 
     fmt.Printf("\n🎧 Загрузка аудио файла: %s\n", *audioFile)
 
