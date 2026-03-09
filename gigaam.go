@@ -7,6 +7,7 @@ import (
     "os"
     "strings"
     "sync"
+    // "time"
 
     "github.com/madelynnblue/go-dsp/fft"
     ort "github.com/yalue/onnxruntime_go"
@@ -39,8 +40,7 @@ type GigaAMModule struct {
     encoderDim  int
     initialized bool
     mu          sync.Mutex
-    ortOnce     sync.Once
-    ortInitialized bool
+    // ortOnce     sync.Once
 }
 
 // Result представляет результат распознавания
@@ -48,6 +48,7 @@ type Result struct {
     Text        string
     IsProcessed bool
 }
+
 
 // New создает новый экземпляр GigaAM модуля
 func New(cfg Config) (*GigaAMModule, error) {
@@ -64,22 +65,23 @@ func New(cfg Config) (*GigaAMModule, error) {
     }
 
     module.initialized = true
-    // fmt.Println("✅ GigaAM модель инициализирована")
+    fmt.Println("✅ GigaAM модель инициализирована")
     return module, nil
 }
 
 // initONNX инициализирует ONNX Runtime и загружает модели
 func (m *GigaAMModule) initONNX() error {
-    var initErr error
-    m.ortOnce.Do(func() {
-        ort.SetSharedLibraryPath("/home/michael/go/ort/lib/libonnxruntime.so")
-        initErr = ort.InitializeEnvironment()
-    })
-    if initErr != nil {
-        if !strings.Contains(initErr.Error(), "already been initialized") {
-            return fmt.Errorf("failed to initialize ONNX Runtime: %v", initErr)
-        }
-    }
+    // var initErr error
+    // m.ortOnce.Do(func() {
+    //     ort.SetSharedLibraryPath("/home/michael/go/ort/lib/libonnxruntime.so")
+    //     initErr = ort.InitializeEnvironment()
+    // })
+
+    // if initErr != nil {
+    //     if !strings.Contains(initErr.Error(), "already been initialized") {
+    //         return fmt.Errorf("failed to initialize ONNX Runtime: %v", initErr)
+    //     }
+    // }
 
     // Пути к файлам модели
     encoderPath := m.config.ModelPath + "/encoder.int8.onnx"
@@ -109,6 +111,21 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
     m.mu.Lock()
     defer m.mu.Unlock()
 
+    var sessionCount int
+    // в начале ProcessAudio
+    sessionCount++
+    fmt.Printf("🧮 Сессий создано: %d\n", sessionCount)
+    fmt.Printf("🔍 ProcessAudio получил %d байт\n", len(pcm))
+
+    type StepInfo struct {
+        Step     int
+        Token    int
+        Logit    float32
+        TokenStr string
+    }
+    var firstSteps []StepInfo
+
+
     if !m.initialized {
         return Result{}, fmt.Errorf("module not initialized")
     }
@@ -121,6 +138,9 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
     }
 
     // Извлекаем фичи
+
+    fmt.Printf("🔍 Аудио: %d сэмплов, энергия: %f\n", len(samples), computeEnergy(samples))
+
     features := extractFeatures(samples)
     numFrames := len(features[0])
 
@@ -134,8 +154,9 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
             }
         }
         numFrames += padFrames
-        // fmt.Printf("  📊 Добавлено %d фреймов паддинга (теперь %d)\n", padFrames, numFrames)
     }
+
+    outSteps := numFrames / 4
 
     // Подготавливаем вход для энкодера
     flatFeatures := make([]float32, NMels*numFrames)
@@ -147,23 +168,22 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
 
     // Создаем тензоры
     audioTensor, _ := ort.NewTensor(ort.NewShape(1, NMels, int64(numFrames)), flatFeatures)
-    defer audioTensor.Destroy()
+    // defer audioTensor.Destroy()
 
     lengthTensor, _ := ort.NewTensor(ort.NewShape(1), []int64{int64(numFrames)})
-    defer lengthTensor.Destroy()
+    // defer lengthTensor.Destroy()
 
     // Выход энкодера
-    outSteps := int64(numFrames / 4)
-    encoderOutData := make([]float32, 1*m.encoderDim*int(outSteps))
-    encoderOutTensor, _ := ort.NewTensor(ort.NewShape(1, int64(m.encoderDim), outSteps), encoderOutData)
-    defer encoderOutTensor.Destroy()
+    encoderOutData := make([]float32, 1*m.encoderDim*outSteps)
+    encoderOutTensor, _ := ort.NewTensor(ort.NewShape(1, int64(m.encoderDim), int64(outSteps)), encoderOutData)
+    // defer encoderOutTensor.Destroy()
 
     outLenTensor, _ := ort.NewTensor(ort.NewShape(1), []int64{0})
-    defer outLenTensor.Destroy()
+    // defer outLenTensor.Destroy()
 
     // Создаем сессию энкодера
     options, _ := ort.NewSessionOptions()
-    defer options.Destroy()
+    // defer options.Destroy()
 
     encoder, err := ort.NewAdvancedSession(
         m.config.ModelPath+"/encoder.int8.onnx",
@@ -176,43 +196,41 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
     if err != nil {
         return Result{}, fmt.Errorf("failed to create encoder session: %v", err)
     }
-    defer encoder.Destroy()
+    // defer encoder.Destroy()
 
     if err := encoder.Run(); err != nil {
         return Result{}, fmt.Errorf("encoder failed: %v", err)
     }
-
-    // fmt.Printf("✅ Энкодер готов: %v\n", encoderOutTensor.GetShape())
 
     // Инициализация декодера
     hData := make([]float32, m.predLayers*1*m.predHidden)
     cData := make([]float32, m.predLayers*1*m.predHidden)
 
     hTensor, _ := ort.NewTensor(ort.NewShape(int64(m.predLayers), 1, int64(m.predHidden)), hData)
-    defer hTensor.Destroy()
+    // defer hTensor.Destroy()
 
     cTensor, _ := ort.NewTensor(ort.NewShape(int64(m.predLayers), 1, int64(m.predHidden)), cData)
-    defer cTensor.Destroy()
+    // defer cTensor.Destroy()
 
     tokenInTensor, _ := ort.NewTensor(ort.NewShape(1, 1), []int64{m.blankID})
-    defer tokenInTensor.Destroy()
+    // defer tokenInTensor.Destroy()
 
     unusedLenIn, _ := ort.NewTensor(ort.NewShape(1), []int64{0})
-    defer unusedLenIn.Destroy()
+    // defer unusedLenIn.Destroy()
 
     decOutData := make([]float32, 1*m.predHidden*1)
     decOutTensor, _ := ort.NewTensor(ort.NewShape(1, int64(m.predHidden), 1), decOutData)
-    defer decOutTensor.Destroy()
+    // defer decOutTensor.Destroy()
 
     decUnusedOut, _ := ort.NewTensor(ort.NewShape(1), []int64{0})
-    defer decUnusedOut.Destroy()
+    // defer decUnusedOut.Destroy()
 
     // Выходные состояния (те же данные, что и входные)
     hOutTensor, _ := ort.NewTensor(ort.NewShape(int64(m.predLayers), 1, int64(m.predHidden)), hData)
-    defer hOutTensor.Destroy()
+    // defer hOutTensor.Destroy()
 
     cOutTensor, _ := ort.NewTensor(ort.NewShape(int64(m.predLayers), 1, int64(m.predHidden)), cData)
-    defer cOutTensor.Destroy()
+    // defer cOutTensor.Destroy()
 
     decoder, err := ort.NewAdvancedSession(
         m.config.ModelPath+"/decoder.onnx",
@@ -225,7 +243,7 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
     if err != nil {
         return Result{}, fmt.Errorf("failed to create decoder session: %v", err)
     }
-    defer decoder.Destroy()
+    // defer decoder.Destroy()
 
     // Первый шаг декодера
     if err := decoder.Run(); err != nil {
@@ -235,11 +253,11 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
     // Подготовка джойнера
     encStepData := make([]float32, 1*m.encoderDim*1)
     encStepTensor, _ := ort.NewTensor(ort.NewShape(1, int64(m.encoderDim), 1), encStepData)
-    defer encStepTensor.Destroy()
+    // defer encStepTensor.Destroy()
 
     jointOutData := make([]float32, 1*1*1*(int(m.blankID)+1))
     jointOutTensor, _ := ort.NewTensor(ort.NewShape(1, 1, 1, int64(m.blankID)+1), jointOutData)
-    defer jointOutTensor.Destroy()
+    // defer jointOutTensor.Destroy()
 
     joiner, err := ort.NewAdvancedSession(
         m.config.ModelPath+"/joiner.onnx",
@@ -252,17 +270,20 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
     if err != nil {
         return Result{}, fmt.Errorf("failed to create joiner session: %v", err)
     }
-    defer joiner.Destroy()
+    // defer joiner.Destroy()
 
     // Цикл декодирования
     var resultTokens []string
     blankCount := 0
+    firstTokens := make([]string, 0)
 
-    for t := 0; t < int(outSteps); t++ {
+    for t := 0; t < outSteps; t++ {
+        // В начале цикла создаём слайс для хранения первых шагов
+
         // Копируем шаг энкодера
         encStep := encStepTensor.GetData()
         for c := 0; c < m.encoderDim; c++ {
-            encStep[c] = encoderOutData[c*int(outSteps)+t]
+            encStep[c] = encoderOutData[c*outSteps+t]
         }
 
         // Запускаем джойнер
@@ -281,15 +302,28 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
             }
         }
 
-        // Отладка первых шагов (можно закомментировать)
-        // if t < 5 {
-        //     fmt.Printf("DEBUG: t=%d, bestToken=%d, maxVal=%.4f\n", t, bestToken, maxVal)
-        // }
+
+        // В цикле, после нахождения bestToken:
+        if len(firstSteps) < 20 {
+            tokenStr := ""
+            if int64(bestToken) != m.blankID {
+                tokenStr = m.tokens[bestToken]
+            }
+            firstSteps = append(firstSteps, StepInfo{
+                Step:     t,
+                Token:    bestToken,
+                Logit:    maxVal,
+                TokenStr: tokenStr,
+            })
+        }
 
         if int64(bestToken) != m.blankID {
             blankCount = 0
             if token, ok := m.tokens[bestToken]; ok {
                 resultTokens = append(resultTokens, token)
+                if len(firstTokens) < 5 {
+                    firstTokens = append(firstTokens, token)
+                }
             }
 
             // Обновляем декодер с новым токеном
@@ -309,6 +343,17 @@ func (m *GigaAMModule) ProcessAudio(pcm []byte) (Result, error) {
     text := strings.Join(resultTokens, "")
     text = strings.ReplaceAll(text, "▁", " ")
 
+    // ДИАГНОСТИКА: если GigaAM вернул пустую строку
+    if strings.TrimSpace(text) == "" {
+        fmt.Printf("\n🔍 Первые 20 шагов декодирования:\n")
+        fmt.Printf("  Шаг | Токен | Значение | Строка\n")
+        fmt.Printf("  ----|-------|----------|--------\n")
+        for _, s := range firstSteps {
+            fmt.Printf("  %4d | %5d | %8.4f | %s\n",
+                s.Step, s.Token, s.Logit, s.TokenStr)
+        }
+    }
+
     return Result{
         Text:        strings.TrimSpace(text),
         IsProcessed: true,
@@ -325,8 +370,7 @@ func (m *GigaAMModule) ProcessText(text string) (Result, error) {
 
 // Close освобождает ресурсы
 func (m *GigaAMModule) Close() {
-    ort.DestroyEnvironment()
-    // fmt.Println("🔚 [GigaAM] Модуль закрыт")
+    // ort.DestroyEnvironment()
 }
 
 // LoadConfig загружает конфигурацию из JSON файла
@@ -427,13 +471,17 @@ func getMelFilterbank() [][]float64 {
     return fb
 }
 
-// Вспомогательная функция для подсчета ненулевых элементов (можно использовать при отладке)
-func countNonZero(data []float32) int {
-    count := 0
-    for _, v := range data {
-        if v != 0 {
-            count++
-        }
+func min(a, b int) int {
+    if a < b {
+        return a
     }
-    return count
+    return b
+}
+
+func computeEnergy(samples []float32) float32 {
+    var sum float32
+    for _, s := range samples {
+        sum += s * s
+    }
+    return sum / float32(len(samples))
 }

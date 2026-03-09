@@ -1,6 +1,7 @@
 package main
 
 import (
+    "encoding/json"
     "flag"
     "fmt"
     "log"
@@ -12,6 +13,7 @@ import (
 func main() {
     configPath := flag.String("config", "config.json", "путь к файлу конфигурации")
     audioFile := flag.String("audio", "", "путь к WAV файлу для тестирования")
+    debug := flag.Bool("debug", false, "включить отладочный вывод")
     flag.Parse()
 
     cfg, err := gigaam.LoadConfig(*configPath)
@@ -27,7 +29,7 @@ func main() {
     fmt.Printf("  Модель: %s\n", cfg.ModelPath)
     fmt.Printf("  Частота: %d Hz\n", cfg.SampleRate)
 
-    module, err := gigaam.New(cfg)
+    module, err := gigaam.New(cfg, *debug)
     if err != nil {
         log.Fatalf("❌ Ошибка создания GigaAM модуля: %v", err)
     }
@@ -35,13 +37,11 @@ func main() {
 
     fmt.Printf("\n🎧 Загрузка аудио файла: %s\n", *audioFile)
 
-    // Читаем WAV файл
     wavData, err := os.ReadFile(*audioFile)
     if err != nil {
         log.Fatalf("❌ Ошибка чтения WAV файла: %v", err)
     }
 
-    // Пропускаем WAV заголовок (44 байта)
     if len(wavData) < 44 {
         log.Fatalf("❌ Файл слишком маленький")
     }
@@ -55,4 +55,9 @@ func main() {
     }
 
     fmt.Printf("\n✨ РЕЗУЛЬТАТ:\n%s\n", result.Text)
+
+    if *debug && result.Debug != nil {
+        debugJSON, _ := json.MarshalIndent(result.Debug, "", "  ")
+        fmt.Printf("\n🔍 Отладка:\n%s\n", debugJSON)
+    }
 }
